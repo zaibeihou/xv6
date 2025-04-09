@@ -6,6 +6,13 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h" // Include the header where struct sysinfo is defined
+
+// 从内核态拷贝到用户态
+// 拷贝len字节数的数据, 从src指向的内核地址开始, 到由pagetable下的dstv用户地址
+// 成功则返回 0, 失败返回 -1
+int
+copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len);
 
 uint64
 sys_exit(void)
@@ -101,8 +108,22 @@ sys_uptime(void)
 uint64 
 sys_trace(void) {
   int trace_sys_mask;
-  if (argint(0, &trace_sys_mask) < 0)
+  if (argint(0, &trace_sys_mask)< 0)
     return -1;
   myproc()->tracemask |= trace_sys_mask;
+  return 0;
+}
+
+int sys_sysinfo(struct sysinfo *info) {
+  struct proc *p = myproc();
+  uint64 addr;
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  
+  struct sysinfo s;
+  s.freemem = kfreemem();
+  s.nproc = count_free_proc();
+  if (copyout(p->pagetable, addr, (char *)&s, sizeof(s)) < 0)
+    return -1;
   return 0;
 }
