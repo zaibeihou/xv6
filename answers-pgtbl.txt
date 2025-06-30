@@ -1,0 +1,5 @@
+第三个测试 srcva + len < srcva 是为了检测整数溢出。
+例如：srcva = 0xFFFFFFFFFFFFF000, len = 0x2000
+此时 srcva + len 会溢出，结果为 0x1000
+由于 0x1000 < 0xFFFFFFFFFFFFF000，所以返回 -1
+这防止了因整数溢出导致的安全漏洞。

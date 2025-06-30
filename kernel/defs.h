@@ -157,7 +157,15 @@ void            uartputc(int);
 void            uartputc_sync(int);
 int             uartgetc(void);
 
-// vm.c
+// vm.
+void            ukvminithard(pagetable_t kpagetable);
+int             pagecopy(pagetable_t oldpage, pagetable_t newpage, uint64 begin, uint64 end);
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
+void            freeprockvm(struct proc* p);
+void            ufreewalk(pagetable_t pagetable);
+void            ukvmunmap(pagetable_t pagetable, uint64 va, uint64 npages);
+pagetable_t     ukvinit(void);
+void            ukvmmap(pagetable_t, uint64, uint64, uint64, int);
 void            kvminit(void);
 void            kvminithart(void);
 uint64          kvmpa(uint64);
@@ -178,7 +186,11 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            vmprint(pagetable_t);
 
+// vmcopyin.c
+int             copyin_new(pagetable_t, char *, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
