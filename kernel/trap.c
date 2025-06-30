@@ -98,6 +98,13 @@ usertrapret(void)
 
   // send syscalls, interrupts, and exceptions to trampoline.S
   w_stvec(TRAMPOLINE + (uservec - trampoline));
+  //TRAMPOLINE指的是用户页表下的
+  //uservec指的是trampoline.S中的uservec函数
+  //trampoline指的是内核空间trampoline.S的起始地址
+  
+  //为什么是在返回到用户态的时候设置stvec呢？
+  //因为在系统初始化的时候，系统会有一次从内核到用户态的转换
+  //在第一次的转换时，会设置此寄存器
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
