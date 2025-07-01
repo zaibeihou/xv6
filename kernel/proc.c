@@ -113,6 +113,13 @@ found:
     return 0;
   }
 
+  //allocate alarm trapframe
+  if((p->alarmtrapframe = (struct trapframe *)kalloc()) == 0){
+    kfree((void*)p->trapframe);
+    p->trapframe = 0;
+    release(&p->lock);
+    return 0;
+  }
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -127,6 +134,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->alarm_period = 0; // no alarm set
+  p->alarm_handler = 0; // no alarm handler set
+  p->ticks_since_last_alarm = 0; // no ticks since last alarm
+  p->inalarm = 0; // not in an alarm handler
   return p;
 }
 
@@ -139,6 +150,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->alarmtrapframe)
+    kfree((void*)p->alarmtrapframe);
+  p->alarmtrapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
