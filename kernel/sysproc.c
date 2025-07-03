@@ -46,10 +46,22 @@ sys_sbrk(void)
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  myproc()->sz += n;  // 虚假地增加size而不物理分配
-//if(growproc(n) < 0)
-    //return -1;
+  
+  struct proc *p = myproc();
+  addr = p->sz;
+  
+  if(n < 0) {
+    // 缩小内存
+    if(addr + n < 0)
+      return -1;
+    p->sz = uvmdealloc(p->pagetable, addr, addr + n);
+  } else {
+    // 扩大内存（懒分配）
+    if((uint64)addr + n > MAXVA)
+      return -1;
+    p->sz = addr + n;  // 只增加大小，不分配物理内存
+  }
+  
   return addr;
 }
 

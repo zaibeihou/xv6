@@ -66,19 +66,12 @@ usertrap(void)
 
     syscall();
   } else if(r_scause() == 15 || r_scause() == 13){
-    printf("page fault trap: number %d stval %p\n", r_scause(), r_stval());
-    uint64 va = PGROUNDDOWN(r_stval()); //DOWN用来定位
-    uint64 pa = (uint64) kalloc();
-    //通过页表将va映射到pa
-    if(pa == 0){
-      p->killed = 1; // out of memory
-    }else{
-      memset((void*)pa, 0, PGSIZE); // clear the page
-      if(mappages(p->pagetable, va, PGSIZE, pa, PTE_R | PTE_W| PTE_X| PTE_U) != 0){
-        kfree((void*)pa);
-        p->killed = 1; // out of memory
-      }
+    if(lazyvalidate(p, r_stval()) != 0){
+      // lazyvalidate failed, so kill the process.
+      p->killed = 1;
+      goto kill;
     }
+   
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -86,7 +79,7 @@ usertrap(void)
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
-
+kill:
   if(p->killed)
     exit(-1);
 
@@ -157,7 +150,11 @@ kerneltrap()
   if(intr_get() != 0)
     panic("kerneltrap: interrupts enabled");
 
+  if (scause == 13 || scause == 15) {
+    lazyvalidate(myproc(), r_stval());
+  }
   if((which_dev = devintr()) == 0){
+    printf("the faulting process is pid=%d\n", myproc()->pid);
     printf("scause %p\n", scause);
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");

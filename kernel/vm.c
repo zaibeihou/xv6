@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -156,8 +158,14 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("remap");
+    if(*pte & PTE_V){
+      // 对于懒分配，如果页面已经存在，跳过
+      if(a == last)
+        break;
+      a += PGSIZE;
+      pa += PGSIZE;
+      continue;
+    }
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -181,7 +189,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
       //panic("uvmunmap: not mapped");
       continue;
@@ -284,7 +292,10 @@ freewalk(pagetable_t pagetable)
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
-      panic("freewalk: leaf");
+      // 对于懒分配，可能存在叶子页面，释放它们
+      uint64 pa = PTE2PA(pte);
+      kfree((void*)pa);
+      pagetable[i] = 0;
     }
   }
   kfree((void*)pagetable);
@@ -316,9 +327,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -359,6 +370,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    lazyvalidate(myproc(), va0); // 确保页表中有映射
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -381,9 +393,18 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
+  struct proc *p = myproc();
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
+    // 对于懒分配，如果页面不存在，先分配
+    if(srcva < p->sz) {
+      pte_t *pte = walk(pagetable, va0, 0);
+      if(pte == 0 || (*pte & PTE_V) == 0) {
+        if(lazyvalidate(p, va0) != 0)
+          return -1;
+      }
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -408,9 +429,19 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
   uint64 n, va0, pa0;
   int got_null = 0;
-
+  struct proc *p = myproc();
   while(got_null == 0 && max > 0){
     va0 = PGROUNDDOWN(srcva);
+
+    // 对于懒分配，如果页面不存在，先分配
+    if(srcva < p->sz) {
+      pte_t *pte = walk(pagetable, va0, 0);
+      if(pte == 0 || (*pte & PTE_V) == 0) {
+        if(lazyvalidate(p, va0) != 0)
+          return -1;
+      }
+    }
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -440,4 +471,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int lazyvalidate(struct proc* p, uint64 va){
+  // 检查地址范围
+  if (va > p->sz || va < p->trapframe->sp) {
+      return -1;
+  }
+  // 检查是否已经映射
+  if (walkaddr(p->pagetable, va) != 0) {
+      return 0;
+  }
+  
+  va = PGROUNDDOWN(va);
+  uint64 pa = (uint64) kalloc();
+  
+  if(pa == 0){
+    return -1;
+  }
+  
+  memset((void*)pa, 0, PGSIZE);
+  
+  if(mappages(p->pagetable, va, PGSIZE, pa, PTE_R | PTE_W | PTE_U) != 0){
+    kfree((void*)pa);
+    return -1;
+  }
+  
+  return 0;
 }
