@@ -47,8 +47,9 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  myproc()->sz += n;  // 虚假地增加size而不物理分配
+//if(growproc(n) < 0)
+    //return -1;
   return addr;
 }
 

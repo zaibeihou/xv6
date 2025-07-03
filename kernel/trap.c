@@ -65,6 +65,20 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15 || r_scause() == 13){
+    printf("page fault trap: number %d stval %p\n", r_scause(), r_stval());
+    uint64 va = PGROUNDDOWN(r_stval()); //DOWN用来定位
+    uint64 pa = (uint64) kalloc();
+    //通过页表将va映射到pa
+    if(pa == 0){
+      p->killed = 1; // out of memory
+    }else{
+      memset((void*)pa, 0, PGSIZE); // clear the page
+      if(mappages(p->pagetable, va, PGSIZE, pa, PTE_R | PTE_W| PTE_X| PTE_U) != 0){
+        kfree((void*)pa);
+        p->killed = 1; // out of memory
+      }
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
